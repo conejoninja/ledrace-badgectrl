@@ -64,7 +64,7 @@ func main() {
 		color.RGBA{255, 153, 51, 255},  // STEPR
 	}
 
-	player = 1
+	player = menu()+1
 
 	resetDisplay()
 	// Both progress bar are 0-100 (0 started lap or race, 100 lap or race completed)
@@ -189,13 +189,3 @@ func stepR(enabled bool) {
 	}
 }
 
-func getRainbowRGB(i uint8) color.RGBA {
-	if i < 85 {
-		return color.RGBA{i * 3, 255 - i*3, 0, 255}
-	} else if i < 170 {
-		i -= 85
-		return color.RGBA{255 - i*3, 0, i * 3, 255}
-	}
-	i -= 170
-	return color.RGBA{0, i * 3, 255 - i*3, 255}
-}
