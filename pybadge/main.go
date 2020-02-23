@@ -30,6 +30,7 @@ var buttons shifter.Device
 var leds ws2812.Device
 var colors []color.RGBA
 var player uint8
+var oldSpeed int16
 var needlePoint = [91][2]int16{{30, 0}, {29, 0}, {29, 1}, {29, 1}, {29, 2}, {29, 2}, {29, 3}, {29, 3}, {29, 4}, {29, 4}, {29, 5}, {29, 5}, {29, 6}, {29, 6}, {29, 7}, {28, 7}, {28, 8}, {28, 8}, {28, 9}, {28, 9}, {28, 10}, {28, 10}, {27, 11}, {27, 11}, {27, 12}, {27, 12}, {26, 13}, {26, 13}, {26, 14}, {26, 14}, {25, 14}, {25, 15}, {25, 15}, {25, 16}, {24, 16}, {24, 17}, {24, 17}, {23, 18}, {23, 18}, {23, 18}, {22, 19}, {22, 19}, {22, 20}, {21, 20}, {21, 20}, {21, 21}, {20, 21}, {20, 21}, {20, 22}, {19, 22}, {19, 22}, {18, 23}, {18, 23}, {18, 23}, {17, 24}, {17, 24}, {16, 24}, {16, 25}, {15, 25}, {15, 25}, {15, 25}, {14, 26}, {14, 26}, {13, 26}, {13, 26}, {12, 27}, {12, 27}, {11, 27}, {11, 27}, {10, 28}, {10, 28}, {9, 28}, {9, 28}, {8, 28}, {8, 28}, {7, 28}, {7, 29}, {6, 29}, {6, 29}, {5, 29}, {5, 29}, {4, 29}, {4, 29}, {3, 29}, {3, 29}, {2, 29}, {2, 29}, {1, 29}, {1, 29}, {0, 29}, {0, 30}}
 
 func main() {
@@ -67,7 +68,7 @@ func main() {
 		color.RGBA{255, 153, 51, 255},  // STEPR
 	}
 
-	player = menu()+1
+	player = menu() + 1
 
 	configureWifi(int(player))
 
@@ -77,27 +78,16 @@ func main() {
 	progressLapBar(80)
 	progressRaceBar(60)
 	// speedGaugeNeedle is 0-250
-	speedGaugeNeedle(0, colors[BACKGROUND])
+	speedGaugeNeedle(0, colors[PLAYER1])
 
 	// STEPS are true|false if they are activated or not
 	stepL(true)
 	stepR(true)
 
-	var oldSpeed, speed, delta int16
-	delta = 1
-
 	for {
-		speedGaugeNeedle(oldSpeed, colors[BACKGROUND])
-		speedGaugeNeedle(speed, colors[PLAYER1])
-		oldSpeed = speed
-		speed += delta
-		if speed >= 250 {
-			delta = -1
-		}
-		if speed <= 0 {
-			delta = 1
-		}
-		time.Sleep(10 * time.Millisecond)
+		// CODE THAT READ SENSOR AND SEND MQTT MSG
+		Send([]byte("1"))
+		time.Sleep(100 * time.Millisecond)
 	}
 
 }
@@ -107,6 +97,8 @@ func resetDisplay() {
 
 	// GAUGE
 	speedGauge()
+	oldSpeed = 0
+	speedGaugeNeedle(oldSpeed, colors[PLAYER1])
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 37, 76, []byte("SPEED"), colors[WHITE])
 
 	// STEP L
@@ -193,4 +185,3 @@ func stepR(enabled bool) {
 		display.FillRectangle(134, 32, 16, 16, colors[BACKGROUND])
 	}
 }
-
