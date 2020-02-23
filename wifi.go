@@ -88,12 +88,10 @@ func configureWifi(player int) {
 
 	go publishing()
 
-	select {}
-
-	// Right now this code is never reached. Need a way to trigger it...
+	/*// Right now this code is never reached. Need a way to trigger it...
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 60, []byte("Disconnecting MQTT..."), color.RGBA{255, 0, 0, 255})
 	println("Disconnecting MQTT...")
-	cl.Disconnect(100)
+	cl.Disconnect(100)    */
 
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 70, []byte("Done."), color.RGBA{0, 255, 0, 255})
 	println("Done.")
@@ -119,11 +117,16 @@ func connectToAP() {
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 90, []byte("Connecting to '"+ssid+"'"), color.RGBA{255, 255, 255, 255})
 	println("Connecting to " + ssid)
 	adaptor.SetPassphrase(ssid, pass)
+	k := 0
 	for st, _ := adaptor.GetConnectionStatus(); st != wifinina.StatusConnected; {
 		tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 100, []byte(st.String()), color.RGBA{255, 0,0, 255})
 		println("Connection status: " + st.String())
-		time.Sleep(1 * time.Second)
+		time.Sleep(1000 * time.Millisecond)
 		st, _ = adaptor.GetConnectionStatus()
+		k++
+		if k > 4 {
+			break
+		}
 	}
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 110, []byte("Connected :D"), color.RGBA{0, 255, 0, 255})
 	println("Connected.")
@@ -131,7 +134,7 @@ func connectToAP() {
 	ip, _, _, err := adaptor.GetIP()
 	for ; err != nil; ip, _, _, err = adaptor.GetIP() {
 		tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 120, []byte(err.Error()), color.RGBA{255, 0, 0, 255})
-		println(err.Error())
+		println("IP", err.Error())
 		time.Sleep(1 * time.Second)
 	}
 	tinyfont.WriteLine(&display, &proggy.TinySZ8pt7b, 0, 120, []byte("IP: "+ip.String()), color.RGBA{0, 255, 0, 255})
