@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"image/color"
 	"machine"
-	"math/rand"
 	"strconv"
 	"time"
+
+	"tinygo.org/x/tinydraw"
 
 	"tinygo.org/x/drivers/wifinina"
 	"tinygo.org/x/tinyfont"
@@ -17,13 +16,15 @@ import (
 
 const ssid = "YOURSSID"
 const pass = "YOURPASS"
-const server = "ssl://test.mosquitto.org:8883"
+
+//const server = "ssl://test.mosquitto.org:8883"
+const server = "tcp://test.mosquitto.org:1883"
 
 var (
-	uart = machine.UART2
-	tx   = machine.NINA_TX
-	rx   = machine.NINA_RX
-	spi  = machine.NINA_SPI
+	/*uart = machine.UART1
+	tx   = machine.UART_TX_PIN
+	rx   = machine.UART_RX_PIN  */
+	spi = machine.NINA_SPI
 
 	// this is the ESP chip that has the WIFININA firmware flashed on it
 	adaptor = &wifinina.Device{
@@ -39,21 +40,44 @@ var (
 	cl      mqtt.Client
 	topicTx = "tinygo/tx"
 	topicRx = "tinygo/rx"
+	payload []byte
+	enabled bool
 )
 
-func subHandler(client mqtt.Client, msg mqtt.Message) {
-	fmt.Printf("[%s]  ", msg.Topic())
-	fmt.Printf("%s\r\n", msg.Payload())
+func updateTrackInfo(client mqtt.Client, msg mqtt.Message) {
+	// this code causes a hardfault    ¿?
+	ba := msg.Payload()
+	if len(ba) != 4 {
+		return
+	}
+	var speed int16
+	speed |= int16(ba[0])
+	speed |= int16(ba[1]) << 8
+
+	speedGaugeNeedle(speed, colors[BLACK])
+	speedGaugeNeedle(speed, colors[player])
+	oldSpeed = speed
+
+	var progress int16
+	progress |= int16(ba[2])
+	progress |= int16(ba[3]) << 8
+	resetLapBar()
+	progressLapBar(progress)
+
+	progress |= int16(ba[4])
+	progress |= int16(ba[5]) << 8
+	progressRaceBar(progress)
+
 }
 
 func configureWifi(player int) {
-	display.FillScreen(color.RGBA{0, 0, 0, 255})
+	display.FillScreen(colors[BACKGROUND])
 
 	topicTx = "player" + strconv.Itoa(player) + "/tx"
 	topicRx = "player" + strconv.Itoa(player) + "/rx"
 
-	uart.Configure(machine.UARTConfig{TX: tx, RX: rx})
-	rand.Seed(time.Now().UnixNano())
+	/*uart.Configure(machine.UARTConfig{TX: tx, RX: rx})
+	rand.Seed(time.Now().UnixNano())*/
 
 	// Configure SPI for 8Mhz, Mode 0, MSB First
 	spi.Configure(machine.SPIConfig{
@@ -65,7 +89,6 @@ func configureWifi(player int) {
 
 	// Init esp8266/esp32
 	adaptor.Configure()
-
 	connectToAP()
 
 	opts := mqtt.NewClientOptions()
@@ -75,70 +98,94 @@ func configureWifi(player int) {
 	cl = mqtt.NewClient(opts)
 	if token := cl.Connect(); token.Wait() && token.Error() != nil {
 		failMessage(token.Error().Error())
-		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 40, []byte(token.Error().Error()), color.RGBA{255, 0, 0, 255})
+		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 80, []byte(token.Error().Error()), colors[PLAYER1])
 	}
 
 	// subscribe
-	token := cl.Subscribe(topicRx, 0, subHandler)
+	token := cl.Subscribe(topicRx, 0, updateTrackInfo)
 	token.Wait()
 	if token.Error() != nil {
-		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 50, []byte(token.Error().Error()), color.RGBA{255, 0, 0, 255})
+		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 90, []byte(token.Error().Error()), colors[PLAYER1])
 		failMessage(token.Error().Error())
 	}
 
-	go publishing()
+	enabled = true
 
-	/*// Right now this code is never reached. Need a way to trigger it...
-	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 60, []byte("Disconnecting MQTT..."), color.RGBA{255, 0, 0, 255})
-	println("Disconnecting MQTT...")
-	cl.Disconnect(100)    */
+	go sendLoop()
 
-	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 70, []byte("Done."), color.RGBA{0, 255, 0, 255})
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 100, []byte("Done."), colors[PLAYER2])
 	println("Done.")
-}
-
-func publishing() {
-	for {
-		println("Publishing MQTT message...")
-		data := []byte("{\"e\":[{ \"n\":\"hello\", \"v\":101 }]}")
-		token := cl.Publish(topicTx, 0, false, data)
-		token.Wait()
-		if token.Error() != nil {
-			println(token.Error().Error())
-		}
-
-		time.Sleep(1000 * time.Millisecond)
-	}
 }
 
 // connect to access point
 func connectToAP() {
 	time.Sleep(2 * time.Second)
-	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 90, []byte("Connecting to '"+ssid+"'"), color.RGBA{255, 255, 255, 255})
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 30, []byte("Connecting to '"+ssid+"'"), colors[WHITE])
 	println("Connecting to " + ssid)
 	adaptor.SetPassphrase(ssid, pass)
 	for st, _ := adaptor.GetConnectionStatus(); st != wifinina.StatusConnected; {
-		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 100, []byte(st.String()), color.RGBA{255, 0, 0, 255})
+		display.FillRectangle(0, 31, 320, 12, colors[BACKGROUND])
+		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 40, []byte(st.String()), colors[PLAYER1])
 		println("Connection status: " + st.String())
 		time.Sleep(1000 * time.Millisecond)
 		st, _ = adaptor.GetConnectionStatus()
 	}
-	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 110, []byte("Connected :D"), color.RGBA{0, 255, 0, 255})
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 50, []byte("Connected :D"), colors[PLAYER2])
 	println("Connected.")
 	time.Sleep(2 * time.Second)
 	ip, _, _, err := adaptor.GetIP()
 	for ; err != nil; ip, _, _, err = adaptor.GetIP() {
-		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 120, []byte(err.Error()), color.RGBA{255, 0, 0, 255})
+		display.FillRectangle(0, 51, 320, 12, colors[BACKGROUND])
+		tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 60, []byte(err.Error()), colors[PLAYER1])
 		println("IP", err.Error())
 		time.Sleep(1 * time.Second)
 	}
-	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 120, []byte("IP: "+ip.String()), color.RGBA{0, 255, 0, 255})
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 0, 70, []byte("IP: "+ip.String()), colors[PLAYER2])
 	println(ip.String())
 }
 
 func failMessage(msg string) {
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 10, 200, []byte(msg), colors[PLAYER1])
+	tinyfont.WriteLine(display, &proggy.TinySZ8pt7b, 10, 220, []byte("0xF1 ErrUnknowHost / 0xF3 ErrConnectionTimeout"), colors[STEPR])
+	tinydraw.Rectangle(display, 4, 186, 312, 40, colors[PLAYER1])
 	for {
 		println(msg)
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Second)
 	}
+}
+
+func sendLoop() {
+	retries := uint8(0)
+	var token mqtt.Token
+
+	for {
+		if enabled {
+			if retries == 0 {
+				println("Publishing MQTT message...", string(payload))
+				token = cl.Publish(topicTx, 0, false, payload)
+				token.Wait()
+			}
+			if retries > 0 || token.Error() != nil {
+				if retries < 10 {
+					token = cl.Connect()
+					if token.Wait() && token.Error() != nil {
+						retries++
+						println("NOT CONNECTED TO MQTT (sendLoop)")
+					} else {
+						retries = 0
+					}
+				} else {
+					enabled = false
+				}
+			}
+			payload = []byte("none")
+			time.Sleep(100 * time.Millisecond)
+		} else {
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func Send(mqttpayload []byte) {
+	payload = mqttpayload
 }
